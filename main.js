@@ -20,7 +20,7 @@ const PNL_OPTION_SPOT_PRICE = 0
 const SHORT_AMOUNT = "100"
 
 async function waitTx(txReq) {
-  return txReq.then(tx => tx.wait())
+  return txReq.then(tx => tx.wait(2)) // wait 2 block for confirmation
 }
 
 async function faucetUsdt(accountAddress) {
