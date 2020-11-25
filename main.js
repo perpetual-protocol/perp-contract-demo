@@ -1,15 +1,11 @@
 const fetch = require("cross-fetch")
-const {
-  Contract,
-  getDefaultProvider,
-  Wallet,
-  BigNumber,
-  constants,
-} = require("ethers")
+const { Contract, Wallet, BigNumber, constants, providers } = require("ethers")
 const AmmArtifact = require("@perp/contract/build/contracts/Amm.json")
 const ClearingHouseArtifact = require("@perp/contract/build/contracts/ClearingHouse.json")
-const ClearingHouseViewerArtifact = require("@perp/contract/build/contracts/ClearingHouseViewer.json")
-const Erc20Artifact = require("@perp/contract/build/contracts/ERC20Simple.json")
+const RootBridgeArtifact = require("@perp/contract/build/contracts/RootBridge.json")
+const ClientBridgeArtifact = require("@perp/contract/build/contracts/ClientBridge.json")
+const CHViewerArtifact = require("@perp/contract/build/contracts/ClearingHouseViewer.json")
+const TetherTokenArtifact = require("@perp/contract/build/contracts/TetherToken.json")
 const { parseUnits, formatEther, formatUnits } = require("ethers/lib/utils")
 require("dotenv").config()
 
@@ -18,15 +14,26 @@ const SHORT_POS = 1
 const DEFAULT_DECIMALS = 18
 const PNL_OPTION_SPOT_PRICE = 0
 const SHORT_AMOUNT = "100"
+const ACTION_DEPOSIT = 0
+const ACTION_WITHDRAW = 1
+
+const ABI_AMB_LAYER1 = [
+  "event RelayedMessage(address indexed sender, address indexed executor, bytes32 indexed messageId, bool status)",
+  "event AffirmationCompleted( address indexed sender, address indexed executor, bytes32 indexed messageId, bool status)",
+]
+
+const ABI_AMB_LAYER2 = [
+  "event AffirmationCompleted( address indexed sender, address indexed executor, bytes32 indexed messageId, bool status)",
+]
 
 async function waitTx(txReq) {
   return txReq.then(tx => tx.wait(2)) // wait 2 block for confirmation
 }
 
 async function faucetUsdt(accountAddress) {
-  const faucetApiKey = "da2-utofcisc6jeznn6girfsg5tcxe"
-  const faucetUrl =
-    "https://gch77tgjo5cxzpji2k44usurdu.appsync-api.ap-southeast-1.amazonaws.com/graphql"
+  const faucetApiKey = "da2-h4xlnj33zvfnheevfgaw7datae"
+  const appSyncId = "izc32tpa5ndllmbql57pcxluua"
+  const faucetUrl = `https://${appSyncId}.appsync-api.ap-northeast-1.amazonaws.com/graphql`
   const options = {
     method: "POST",
     headers: {
@@ -35,8 +42,8 @@ async function faucetUsdt(accountAddress) {
     },
     body: JSON.stringify({
       query: `mutation issue {issue(holderAddr:"${accountAddress}"){
-                    txHash
-                    amount
+                    txHashQuote
+                    amountQuote
                 }
             }`,
     }),
@@ -45,33 +52,56 @@ async function faucetUsdt(accountAddress) {
 }
 
 async function setupEnv() {
-  const metadataUrl = "https://metadata.perp.exchange/ethereum-kovan.json"
+  const metadataUrl = "https://metadata.perp.exchange/staging.json"
   const metadata = await fetch(metadataUrl).then(res => res.json())
-  const provider = getDefaultProvider("kovan")
-  const wallet = Wallet.fromMnemonic(process.env.MNEMONIC).connect(provider)
-  console.log("wallet address", wallet.address)
+  const xDaiUrl = "https://rpc.xdaichain.com/"
+  const infuraProjectId = "04034d1ba6d141b4a5d57f872c0e52bd"
+  const rinkebyUrl = "https://rinkeby.infura.io/v3/" + infuraProjectId
+  const layer1Provider = new providers.JsonRpcProvider(rinkebyUrl)
+  const layer2Provider = new providers.JsonRpcProvider(xDaiUrl)
+  const layer1Wallet = Wallet.fromMnemonic(process.env.MNEMONIC).connect(layer1Provider)
+  const layer2Wallet = Wallet.fromMnemonic(process.env.MNEMONIC).connect(layer2Provider)
+  console.log("wallet address", layer1Wallet.address)
 
-  const clearingHouseAddr = metadata.contracts.ClearingHouse.address
-  const clearingHouseViewerAddr = metadata.contracts.ClearingHouseViewer.address
-  const ammAddr = metadata.contracts.ETHUSDT.address
+  // layer 1 contracts
+  const layer1BridgeAddr = metadata.layers.layer1.contracts.RootBridge.address
+  const usdtAddr = metadata.layers.layer1.externalContracts.tether
+  const layer1AmbAddr = metadata.layers.layer1.externalContracts.ambBridgeOnEth
 
-  const amm = new Contract(ammAddr, AmmArtifact.abi, wallet)
-  const clearingHouse = new Contract(
-    clearingHouseAddr,
-    ClearingHouseArtifact.abi,
-    wallet,
-  )
-  const clearingHouseViewer = new Contract(
-    clearingHouseViewerAddr,
-    ClearingHouseViewerArtifact.abi,
-    wallet,
-  )
+  const layer1Usdt = new Contract(usdtAddr, TetherTokenArtifact.abi, layer1Wallet)
+  const layer1Bridge = new Contract(layer1BridgeAddr, RootBridgeArtifact.abi, layer1Wallet)
+  const layer1Amb = new Contract(layer1AmbAddr, ABI_AMB_LAYER1, layer1Wallet)
 
-  const usdtAddress = await amm.quoteAsset()
-  const usdt = new Contract(usdtAddress, Erc20Artifact.abi, wallet)
-  console.log("usdt address", usdtAddress)
+  // layer 2 contracts
+  const layer2BridgeAddr = metadata.layers.layer2.contracts.ClientBridge.address
+  const layer2AmbAddr = metadata.layers.layer2.externalContracts.ambBridgeOnXDai
+  const xUsdtAddr = metadata.layers.layer2.externalContracts.tether
+  const clearingHouseAddr = metadata.layers.layer2.contracts.ClearingHouse.address
+  const chViewerAddr = metadata.layers.layer2.contracts.ClearingHouseViewer.address
+  const ammAddr = metadata.layers.layer2.contracts.ETHUSDT.address
 
-  return { amm, clearingHouse, usdt, wallet, clearingHouseViewer }
+  const layer2Usdt = new Contract(xUsdtAddr, TetherTokenArtifact.abi, layer2Wallet)
+  const amm = new Contract(ammAddr, AmmArtifact.abi, layer2Wallet)
+  const clearingHouse = new Contract(clearingHouseAddr, ClearingHouseArtifact.abi, layer2Wallet)
+  const clearingHouseViewer = new Contract(chViewerAddr, CHViewerArtifact.abi, layer2Wallet)
+  const layer2Amb = new Contract(layer2AmbAddr, ABI_AMB_LAYER2, layer2Wallet)
+  const layer2Bridge = new Contract(layer2BridgeAddr, ClientBridgeArtifact.abi, layer2Wallet)
+
+  console.log("USDT address", usdtAddr)
+
+  return {
+    amm,
+    clearingHouse,
+    layer1Usdt,
+    layer2Usdt,
+    layer1Wallet,
+    layer2Wallet,
+    clearingHouseViewer,
+    layer1Bridge,
+    layer2Bridge,
+    layer1Amb,
+    layer2Amb,
+  }
 }
 
 async function openPosition(clearingHouse, amm) {
@@ -103,52 +133,146 @@ async function printInfo(clearingHouseViewer, amm, wallet) {
     BigNumber.from(PNL_OPTION_SPOT_PRICE),
   )
 
-  console.log(
-    "- current position",
-    formatUnits(position.size.d, DEFAULT_DECIMALS),
-  )
+  console.log("- current position", formatUnits(position.size.d, DEFAULT_DECIMALS))
   console.log("- pnl", formatUnits(pnl.d, DEFAULT_DECIMALS))
+}
+
+async function printBalances(layer1Wallet, layer2Wallet, layer1Usdt, layer2Usdt) {
+  // get ETH & USDT balance
+  const ethBalance = await layer1Wallet.getBalance()
+  const xDaiBalance = await layer2Wallet.getBalance()
+  let layer1UsdtBalance = await layer1Usdt.balanceOf(layer1Wallet.address)
+  let layer2UsdtBalance = await layer2Usdt.balanceOf(layer1Wallet.address)
+  const layer1UsdtDecimals = await layer1Usdt.decimals()
+  const layer2UsdtDecimals = await layer2Usdt.decimals()
+
+  const outputs = [
+    "balances",
+    `- layer 1`,
+    `  - ${formatEther(ethBalance)} ETH`,
+    `  - ${formatUnits(layer1UsdtBalance, layer1UsdtDecimals)} USDT`,
+    `- layer 2`,
+    `  - ${formatEther(xDaiBalance)} xDAI`,
+    `  - ${formatUnits(layer2UsdtBalance, layer2UsdtDecimals)} USDT`,
+  ]
+  console.log(outputs.join("\n"))
+}
+
+async function waitCrossChain(action, receipt, layer1Amb, layer2Amb) {
+  let methodId
+  let eventName
+  let amb
+
+  if (action === ACTION_DEPOSIT) {
+    methodId = "0x482515ce" // UserRequestForAffirmation
+    eventName = "AffirmationCompleted"
+    amb = layer2Amb
+  } else if (action === ACTION_WITHDRAW) {
+    methodId = "0x520d2afd" // UserRequestForSignature
+    eventName = "RelayedMessage"
+    amb = layer1Amb
+  } else {
+    throw new Error("unknown action: " + action)
+  }
+
+  return new Promise(async (resolve, reject) => {
+    if (receipt && receipt.logs) {
+      const matched = receipt.logs.filter(log => log.topics[0].substr(0, 10) === methodId)
+      if (matched.length === 0) {
+        return reject("methodId not found: " + methodId)
+      }
+      const log = matched[0]
+      const fromMsgId = log.topics[1]
+      console.log("msgId from receipt", fromMsgId)
+      amb.on(eventName, (sender, executor, toMsgId, status, log) => {
+        console.log("got event", toMsgId)
+        if (fromMsgId === toMsgId) {
+          amb.removeAllListeners(eventName)
+          resolve(log.transactionHash)
+        }
+      })
+    } else {
+      reject("receipt or log not found")
+    }
+  })
 }
 
 async function main() {
   const {
     amm,
     clearingHouse,
-    usdt,
-    wallet,
+    layer1Usdt,
+    layer2Usdt,
+    layer1Wallet,
+    layer2Wallet,
     clearingHouseViewer,
+    layer1Bridge,
+    layer2Bridge,
+    layer1Amb,
+    layer2Amb,
   } = await setupEnv()
 
   // get ETH & USDT balance
-  const ethBalance = await wallet.getBalance()
-  let usdtBalance = await usdt.balanceOf(wallet.address)
-  const usdtDecimals = await usdt.decimals()
+  let layer1UsdtBalance = await layer1Usdt.balanceOf(layer1Wallet.address)
 
   // if no USDT, faucet to get more USDT
-  while (!usdtBalance.gt(0)) {
-    // faucet USDT
+  while (!layer1UsdtBalance.gt(0)) {
     console.log("faucet USDT")
-    await faucetUsdt(wallet.address)
-    usdtBalance = await usdt.balanceOf(wallet.address)
+    await faucetUsdt(layer1Wallet.address)
+    layer1UsdtBalance = await layer1Usdt.balanceOf(layer1Wallet.address)
   }
 
-  console.log(`eth balance ${formatEther(ethBalance)} ETH`)
-  console.log(`usdt balance ${formatUnits(usdtBalance, usdtDecimals)} USDT`)
+  const amount = parseUnits(SHORT_AMOUNT, DEFAULT_DECIMALS)
+
+  await printBalances(layer1Wallet, layer2Wallet, layer1Usdt, layer2Usdt)
 
   // approve USDT
-  const allowance = await usdt.allowance(wallet.address, clearingHouse.address)
-  if (allowance.lt(parseUnits(SHORT_AMOUNT, DEFAULT_DECIMALS))) {
-    console.log("approving all tokens for clearing house")
-    await waitTx(usdt.approve(clearingHouse.address, constants.MaxUint256))
+  const allowanceForBridge = await layer1Usdt.allowance(layer1Wallet.address, layer1Bridge.address)
+  if (allowanceForBridge.lt(amount)) {
+    console.log("approving all tokens for root bridge on layer 1")
+    await waitTx(layer1Usdt.approve(layer1Bridge.address, constants.MaxUint256))
+  }
+
+  // deposit to layer 2
+  console.log("depositing to layer 2")
+  const depositAmount = { d: amount }
+  const layer1Receipt = await waitTx(
+    layer1Bridge.erc20Transfer(layer1Usdt.address, layer1Wallet.address, depositAmount),
+  )
+  console.log("waiting confirmation on layer 2")
+  await waitCrossChain(ACTION_DEPOSIT, layer1Receipt, layer1Amb, layer2Amb)
+  await printBalances(layer1Wallet, layer2Wallet, layer1Usdt, layer2Usdt)
+
+  const allowanceForClearingHouse = await layer1Usdt.allowance(
+    layer2Wallet.address,
+    clearingHouse.address,
+  )
+  if (allowanceForClearingHouse.lt(amount)) {
+    console.log("approving all tokens for clearing house on layer 2")
+    await waitTx(layer2Usdt.approve(clearingHouse.address, constants.MaxUint256))
   }
 
   console.log("opening position")
   await openPosition(clearingHouse, amm)
-  await printInfo(clearingHouseViewer, amm, wallet)
+  await printInfo(clearingHouseViewer, amm, layer2Wallet)
 
   console.log("closing position")
-  await waitTx(clearingHouse.closePosition(amm.address))
-  await printInfo(clearingHouseViewer, amm, wallet)
+  await waitTx(clearingHouse.closePosition(amm.address, { d: "0" }))
+  await printInfo(clearingHouseViewer, amm, layer2Wallet)
+
+  // withdraw to layer 1
+  console.log("approving all token for client bridge on layer 2")
+  await waitTx(layer2Usdt.approve(layer2Bridge.address, constants.MaxUint256))
+
+  console.log("withdraw 50 USDT from layer 2 to layer 1")
+  const layer2Receipt = await waitTx(
+    layer2Bridge.erc20Transfer(layer2Usdt.address, layer2Wallet.address, {
+      d: parseUnits("50", DEFAULT_DECIMALS),
+    }),
+  )
+  console.log("waiting confirmation on layer 1")
+  await waitCrossChain(ACTION_WITHDRAW, layer2Receipt, layer1Amb, layer2Amb)
+  await printBalances(layer1Wallet, layer2Wallet, layer1Usdt, layer2Usdt)
 }
 
 main()

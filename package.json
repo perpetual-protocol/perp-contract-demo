@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@perp/contract": "0.10.20",
+    "@perp/contract": "0.12.9",
     "cross-fetch": "3.0.5",
     "dotenv": "8.2.0",
     "ethers": "5.0.9"
