@@ -5,7 +5,7 @@ const ClearingHouseArtifact = require("@perp/contract/build/contracts/ClearingHo
 const RootBridgeArtifact = require("@perp/contract/build/contracts/RootBridge.json")
 const ClientBridgeArtifact = require("@perp/contract/build/contracts/ClientBridge.json")
 const CHViewerArtifact = require("@perp/contract/build/contracts/ClearingHouseViewer.json")
-const TetherTokenArtifact = require("@perp/contract/build/contracts/TetherToken.json")
+const Erc20TokenArtifact = require("@perp/contract/build/contracts/ERC20Token.json")
 const { parseUnits, formatEther, formatUnits } = require("ethers/lib/utils")
 require("dotenv").config()
 
@@ -30,7 +30,7 @@ async function waitTx(txReq) {
   return txReq.then(tx => tx.wait(2)) // wait 2 block for confirmation
 }
 
-async function faucetUsdt(accountAddress) {
+async function faucetUsdc(accountAddress) {
   const faucetApiKey = "da2-h4xlnj33zvfnheevfgaw7datae"
   const appSyncId = "izc32tpa5ndllmbql57pcxluua"
   const faucetUrl = `https://${appSyncId}.appsync-api.ap-northeast-1.amazonaws.com/graphql`
@@ -65,35 +65,35 @@ async function setupEnv() {
 
   // layer 1 contracts
   const layer1BridgeAddr = metadata.layers.layer1.contracts.RootBridge.address
-  const usdtAddr = metadata.layers.layer1.externalContracts.tether
+  const usdcAddr = metadata.layers.layer1.externalContracts.usdc
   const layer1AmbAddr = metadata.layers.layer1.externalContracts.ambBridgeOnEth
 
-  const layer1Usdt = new Contract(usdtAddr, TetherTokenArtifact.abi, layer1Wallet)
+  const layer1Usdc = new Contract(usdcAddr, Erc20TokenArtifact.abi, layer1Wallet)
   const layer1Bridge = new Contract(layer1BridgeAddr, RootBridgeArtifact.abi, layer1Wallet)
   const layer1Amb = new Contract(layer1AmbAddr, ABI_AMB_LAYER1, layer1Wallet)
 
   // layer 2 contracts
   const layer2BridgeAddr = metadata.layers.layer2.contracts.ClientBridge.address
   const layer2AmbAddr = metadata.layers.layer2.externalContracts.ambBridgeOnXDai
-  const xUsdtAddr = metadata.layers.layer2.externalContracts.tether
+  const xUsdcAddr = metadata.layers.layer2.externalContracts.usdc
   const clearingHouseAddr = metadata.layers.layer2.contracts.ClearingHouse.address
   const chViewerAddr = metadata.layers.layer2.contracts.ClearingHouseViewer.address
-  const ammAddr = metadata.layers.layer2.contracts.ETHUSDT.address
+  const ammAddr = metadata.layers.layer2.contracts.ETHUSDC.address
 
-  const layer2Usdt = new Contract(xUsdtAddr, TetherTokenArtifact.abi, layer2Wallet)
+  const layer2Usdc = new Contract(xUsdcAddr, Erc20TokenArtifact.abi, layer2Wallet)
   const amm = new Contract(ammAddr, AmmArtifact.abi, layer2Wallet)
   const clearingHouse = new Contract(clearingHouseAddr, ClearingHouseArtifact.abi, layer2Wallet)
   const clearingHouseViewer = new Contract(chViewerAddr, CHViewerArtifact.abi, layer2Wallet)
   const layer2Amb = new Contract(layer2AmbAddr, ABI_AMB_LAYER2, layer2Wallet)
   const layer2Bridge = new Contract(layer2BridgeAddr, ClientBridgeArtifact.abi, layer2Wallet)
 
-  console.log("USDT address", usdtAddr)
+  console.log("USDC address", usdcAddr)
 
   return {
     amm,
     clearingHouse,
-    layer1Usdt,
-    layer2Usdt,
+    layer1Usdc,
+    layer2Usdc,
     layer1Wallet,
     layer2Wallet,
     clearingHouseViewer,
@@ -137,23 +137,23 @@ async function printInfo(clearingHouseViewer, amm, wallet) {
   console.log("- pnl", formatUnits(pnl.d, DEFAULT_DECIMALS))
 }
 
-async function printBalances(layer1Wallet, layer2Wallet, layer1Usdt, layer2Usdt) {
-  // get ETH & USDT balance
+async function printBalances(layer1Wallet, layer2Wallet, layer1Usdc, layer2Usdc) {
+  // get ETH & USDC balance
   const ethBalance = await layer1Wallet.getBalance()
   const xDaiBalance = await layer2Wallet.getBalance()
-  let layer1UsdtBalance = await layer1Usdt.balanceOf(layer1Wallet.address)
-  let layer2UsdtBalance = await layer2Usdt.balanceOf(layer1Wallet.address)
-  const layer1UsdtDecimals = await layer1Usdt.decimals()
-  const layer2UsdtDecimals = await layer2Usdt.decimals()
+  let layer1UsdcBalance = await layer1Usdc.balanceOf(layer1Wallet.address)
+  let layer2UsdcBalance = await layer2Usdc.balanceOf(layer1Wallet.address)
+  const layer1UsdcDecimals = await layer1Usdc.decimals()
+  const layer2UsdcDecimals = await layer2Usdc.decimals()
 
   const outputs = [
     "balances",
     `- layer 1`,
     `  - ${formatEther(ethBalance)} ETH`,
-    `  - ${formatUnits(layer1UsdtBalance, layer1UsdtDecimals)} USDT`,
+    `  - ${formatUnits(layer1UsdcBalance, layer1UsdcDecimals)} USDC`,
     `- layer 2`,
     `  - ${formatEther(xDaiBalance)} xDAI`,
-    `  - ${formatUnits(layer2UsdtBalance, layer2UsdtDecimals)} USDT`,
+    `  - ${formatUnits(layer2UsdcBalance, layer2UsdcDecimals)} USDC`,
   ]
   console.log(outputs.join("\n"))
 }
@@ -201,8 +201,8 @@ async function main() {
   const {
     amm,
     clearingHouse,
-    layer1Usdt,
-    layer2Usdt,
+    layer1Usdc,
+    layer2Usdc,
     layer1Wallet,
     layer2Wallet,
     clearingHouseViewer,
@@ -212,44 +212,44 @@ async function main() {
     layer2Amb,
   } = await setupEnv()
 
-  // get ETH & USDT balance
-  let layer1UsdtBalance = await layer1Usdt.balanceOf(layer1Wallet.address)
+  // get ETH & USDC balance
+  let layer1UsdcBalance = await layer1Usdc.balanceOf(layer1Wallet.address)
 
-  // if no USDT, faucet to get more USDT
-  while (!layer1UsdtBalance.gt(0)) {
-    console.log("faucet USDT")
-    await faucetUsdt(layer1Wallet.address)
-    layer1UsdtBalance = await layer1Usdt.balanceOf(layer1Wallet.address)
+  // if no USDC, faucet to get more USDC
+  while (!layer1UsdcBalance.gt(0)) {
+    console.log("faucet USDC")
+    await faucetUsdc(layer1Wallet.address)
+    layer1UsdcBalance = await layer1Usdc.balanceOf(layer1Wallet.address)
   }
 
   const amount = parseUnits(SHORT_AMOUNT, DEFAULT_DECIMALS)
 
-  await printBalances(layer1Wallet, layer2Wallet, layer1Usdt, layer2Usdt)
+  await printBalances(layer1Wallet, layer2Wallet, layer1Usdc, layer2Usdc)
 
-  // approve USDT
-  const allowanceForBridge = await layer1Usdt.allowance(layer1Wallet.address, layer1Bridge.address)
+  // approve USDC
+  const allowanceForBridge = await layer1Usdc.allowance(layer1Wallet.address, layer1Bridge.address)
   if (allowanceForBridge.lt(amount)) {
     console.log("approving all tokens for root bridge on layer 1")
-    await waitTx(layer1Usdt.approve(layer1Bridge.address, constants.MaxUint256))
+    await waitTx(layer1Usdc.approve(layer1Bridge.address, constants.MaxUint256))
   }
 
   // deposit to layer 2
   console.log("depositing to layer 2")
   const depositAmount = { d: amount }
   const layer1Receipt = await waitTx(
-    layer1Bridge.erc20Transfer(layer1Usdt.address, layer1Wallet.address, depositAmount),
+    layer1Bridge.erc20Transfer(layer1Usdc.address, layer1Wallet.address, depositAmount),
   )
   console.log("waiting confirmation on layer 2")
   await waitCrossChain(ACTION_DEPOSIT, layer1Receipt, layer1Amb, layer2Amb)
-  await printBalances(layer1Wallet, layer2Wallet, layer1Usdt, layer2Usdt)
+  await printBalances(layer1Wallet, layer2Wallet, layer1Usdc, layer2Usdc)
 
-  const allowanceForClearingHouse = await layer1Usdt.allowance(
+  const allowanceForClearingHouse = await layer1Usdc.allowance(
     layer2Wallet.address,
     clearingHouse.address,
   )
   if (allowanceForClearingHouse.lt(amount)) {
     console.log("approving all tokens for clearing house on layer 2")
-    await waitTx(layer2Usdt.approve(clearingHouse.address, constants.MaxUint256))
+    await waitTx(layer2Usdc.approve(clearingHouse.address, constants.MaxUint256))
   }
 
   console.log("opening position")
@@ -262,17 +262,17 @@ async function main() {
 
   // withdraw to layer 1
   console.log("approving all token for client bridge on layer 2")
-  await waitTx(layer2Usdt.approve(layer2Bridge.address, constants.MaxUint256))
+  await waitTx(layer2Usdc.approve(layer2Bridge.address, constants.MaxUint256))
 
-  console.log("withdraw 50 USDT from layer 2 to layer 1")
+  console.log("withdraw 50 USDC from layer 2 to layer 1")
   const layer2Receipt = await waitTx(
-    layer2Bridge.erc20Transfer(layer2Usdt.address, layer2Wallet.address, {
+    layer2Bridge.erc20Transfer(layer2Usdc.address, layer2Wallet.address, {
       d: parseUnits("50", DEFAULT_DECIMALS),
     }),
   )
   console.log("waiting confirmation on layer 1")
   await waitCrossChain(ACTION_WITHDRAW, layer2Receipt, layer1Amb, layer2Amb)
-  await printBalances(layer1Wallet, layer2Wallet, layer1Usdt, layer2Usdt)
+  await printBalances(layer1Wallet, layer2Wallet, layer1Usdc, layer2Usdc)
 }
 
 main()
