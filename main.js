@@ -243,7 +243,7 @@ async function main() {
   await waitCrossChain(ACTION_DEPOSIT, layer1Receipt, layer1Amb, layer2Amb)
   await printBalances(layer1Wallet, layer2Wallet, layer1Usdc, layer2Usdc)
 
-  const allowanceForClearingHouse = await layer1Usdc.allowance(
+  const allowanceForClearingHouse = await layer2Usdc.allowance(
     layer2Wallet.address,
     clearingHouse.address,
   )
