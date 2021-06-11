@@ -12,6 +12,7 @@ require("dotenv").config()
 // const LONG_POS = 0
 const SHORT_POS = 1
 const DEFAULT_DECIMALS = 18
+const USDC_DECIMALS = 6
 const PNL_OPTION_SPOT_PRICE = 0
 const SHORT_AMOUNT = "100"
 const ACTION_DEPOSIT = 0
@@ -27,7 +28,10 @@ const ABI_AMB_LAYER2 = [
 ]
 
 async function waitTx(txReq) {
-  return txReq.then(tx => tx.wait(2)) // wait 2 block for confirmation
+  return txReq.then(tx => {
+    console.log(`waiting tx ${tx.hash} ...`)
+    return tx.wait(2)
+  }) // wait 2 block for confirmation
 }
 
 async function faucetUsdc(accountAddress) {
@@ -55,8 +59,7 @@ async function setupEnv() {
   const metadataUrl = "https://metadata.perp.exchange/staging.json"
   const metadata = await fetch(metadataUrl).then(res => res.json())
   const xDaiUrl = "https://rpc.xdaichain.com/"
-  const infuraProjectId = "04034d1ba6d141b4a5d57f872c0e52bd"
-  const rinkebyUrl = "https://rinkeby.infura.io/v3/" + infuraProjectId
+  const rinkebyUrl = `https://rinkeby.infura.io/v3/${process.env.INFURA_PROJECT_ID}`
   const layer1Provider = new providers.JsonRpcProvider(rinkebyUrl)
   const layer2Provider = new providers.JsonRpcProvider(xDaiUrl)
   const layer1Wallet = Wallet.fromMnemonic(process.env.MNEMONIC).connect(layer1Provider)
@@ -105,6 +108,9 @@ async function setupEnv() {
 }
 
 async function openPosition(clearingHouse, amm) {
+  // openPosition requires more gas and somehow xdai node does not 
+  // calculate correct gas limit, so we use fixed value here.
+  const options = { gasLimit: 3_800_000 } 
   const quoteAssetAmount = {
     d: parseUnits(SHORT_AMOUNT, DEFAULT_DECIMALS),
   }
@@ -117,6 +123,7 @@ async function openPosition(clearingHouse, amm) {
       quoteAssetAmount,
       leverage,
       minBaseAssetAmount,
+      options
     ),
   )
 }
@@ -222,7 +229,7 @@ async function main() {
     layer1UsdcBalance = await layer1Usdc.balanceOf(layer1Wallet.address)
   }
 
-  const amount = parseUnits(SHORT_AMOUNT, DEFAULT_DECIMALS)
+  const amount = parseUnits(SHORT_AMOUNT, USDC_DECIMALS)
 
   await printBalances(layer1Wallet, layer2Wallet, layer1Usdc, layer2Usdc)
 
@@ -235,7 +242,7 @@ async function main() {
 
   // deposit to layer 2
   console.log("depositing to layer 2")
-  const depositAmount = { d: amount }
+  const depositAmount = { d: parseUnits(SHORT_AMOUNT, DEFAULT_DECIMALS) }
   const layer1Receipt = await waitTx(
     layer1Bridge.erc20Transfer(layer1Usdc.address, layer1Wallet.address, depositAmount),
   )
@@ -275,4 +282,4 @@ async function main() {
   await printBalances(layer1Wallet, layer2Wallet, layer1Usdc, layer2Usdc)
 }
 
-main()
+main().then(() => process.exit(0))
