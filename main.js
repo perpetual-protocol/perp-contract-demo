@@ -1,11 +1,12 @@
 const fetch = require("cross-fetch")
 const { Contract, Wallet, BigNumber, constants, providers } = require("ethers")
-const AmmArtifact = require("@perp/contract/build/contracts/Amm.json")
-const ClearingHouseArtifact = require("@perp/contract/build/contracts/ClearingHouse.json")
-const RootBridgeArtifact = require("@perp/contract/build/contracts/RootBridge.json")
-const ClientBridgeArtifact = require("@perp/contract/build/contracts/ClientBridge.json")
+const AmmArtifact = require("@perp/contract/build/contracts/src/Amm.sol/Amm.json")
+const ClearingHouseArtifact = require("@perp/contract/build/contracts/src/ClearingHouseViewer.sol/ClearingHouseViewer.json")
+const RootBridgeArtifact = require("@perp/contract/build/contracts/src/bridge/ethereum/RootBridge.sol/RootBridge.json")
+const ClientBridgeArtifact = require("@perp/contract/build/contracts/src/bridge/xDai/ClientBridge.sol/ClientBridge.json")
 const CHViewerArtifact = require("@perp/contract/build/contracts/ClearingHouseViewer.json")
-const Erc20TokenArtifact = require("@perp/contract/build/contracts/ERC20Token.json")
+const Erc20TokenArtifact = require("@perp/contract/build/contracts/src/mock/ERC20Fake.sol/ERC20Fake.json")
+
 const { parseUnits, formatEther, formatUnits } = require("ethers/lib/utils")
 require("dotenv").config()
 
